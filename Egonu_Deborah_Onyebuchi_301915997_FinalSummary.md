@@ -4,7 +4,7 @@
 
 ## Case study
 
-My case study is E-commerce Platform. I designed the database for customers placing and tracking orders and store staff reviewing orders and product sales, with separate tables named customers, products, orders and order_items. It supports these operations: place an order with product and price snapshots; find a customer's orders by status and date; summarize paid sales by product; benchmark the order-status filter on synthetic data: compare its query plan before and after a B-tree index using 20000 generated orders; record no expected results in this specification.
+My case study is NaijaMartCo a fictional E-commerce Platform. I designed the database for customers placing and tracking orders and store staff reviewing orders and product sales, with separate tables named customers, products, orders and order_items. It supports these operations: place an order with product and price snapshots; find a customer's orders by status and date; summarize paid sales by product; benchmark the order-status filter on synthetic data: compare its query plan before and after a B-tree index using 20000 generated orders; record no expected results in this specification.
 
 ## Portfolio 1: Database Design and Modelling
 
