@@ -1,0 +1,36 @@
+# PostgreSQL primary + streaming replica
+services:
+  pg-primary:
+    image: postgres:16
+    container_name: pg-primary
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: naijamart
+    command: postgres -c wal_level=replica -c max_wal_senders=10 -c hot_standby=on
+    volumes:
+      - ./init-primary.sh:/docker-entrypoint-initdb.d/init-primary.sh
+      - primary-data:/var/lib/postgresql/data
+    ports: ["5436:5432"]
+  pg-replica:
+    image: postgres:16
+    container_name: pg-replica
+    user: postgres
+    depends_on: [pg-primary]
+    environment:
+      PGPASSWORD: replpass
+    entrypoint:
+      - bash
+      - -c
+      - |
+        until pg_isready -h pg-primary -U postgres; do sleep 2; done
+        if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+          pg_basebackup -h pg-primary -U replicator -D /var/lib/postgresql/data -R -P
+          chmod 700 /var/lib/postgresql/data
+        fi
+        exec postgres -c hot_standby=on
+    volumes:
+      - replica-data:/var/lib/postgresql/data
+    ports: ["5437:5432"]
+volumes:
+  primary-data:
+  replica-data:

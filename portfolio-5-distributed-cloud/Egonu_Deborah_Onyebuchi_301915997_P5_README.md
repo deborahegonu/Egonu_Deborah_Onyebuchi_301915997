@@ -35,4 +35,4 @@ The setup shards `naijamart.products` on `{ sku: "hashed" }` and prints the dist
 In production this maps to a managed service: Amazon RDS for PostgreSQL with Multi-AZ and read replicas, and MongoDB Atlas with sharding, in an African region (for example AWS Cape Town) to reduce latency for Nigerian users. Automated backups, point-in-time recovery and autoscaling read replicas handle sales peaks such as Black Friday.
 
 ## Status
-The compose files and scripts have not been run in the environment that generated this repository. Run them and add your screenshots (`screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_Replication.png`, `screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_Sharding.png`), or document a cloud free-tier deployment instead.
+PostgreSQL streaming replication and a two-shard MongoDB cluster, run in Docker; evidence in the screenshots. (`screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_Replication.png`, `screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_Sharding.png`), or document a cloud free-tier deployment instead.

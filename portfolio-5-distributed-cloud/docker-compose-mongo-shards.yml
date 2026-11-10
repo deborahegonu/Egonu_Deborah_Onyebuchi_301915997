@@ -1,0 +1,16 @@
+# Demo sharded MongoDB: 1 config server, 2 shards, 1 router (single-node replica sets)
+services:
+  cfg:
+    image: mongo:7
+    command: mongod --configsvr --replSet cfgrs --port 27019 --bind_ip_all
+  shard1:
+    image: mongo:7
+    command: mongod --shardsvr --replSet shard1rs --port 27018 --bind_ip_all
+  shard2:
+    image: mongo:7
+    command: mongod --shardsvr --replSet shard2rs --port 27018 --bind_ip_all
+  mongos:
+    image: mongo:7
+    depends_on: [cfg, shard1, shard2]
+    command: mongos --configdb cfgrs/cfg:27019 --bind_ip_all --port 27017
+    ports: ["27017:27017"]
