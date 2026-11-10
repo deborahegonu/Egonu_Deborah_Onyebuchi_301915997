@@ -65,5 +65,5 @@ Session 2 blocked on the lock until Session 1 committed, then saw the updated st
 - Default isolation in PostgreSQL is READ COMMITTED, which allows the lost update in section B.
 - Deadlocks are avoided by always updating rows in the same order (for example ascending `product_id`).
 
-## Screenshots to capture
-`screenshots/Egonu_Deborah_Onyebuchi_301915997_P3_CommitRollback.png` and `screenshots/Egonu_Deborah_Onyebuchi_301915997_P3_ConcurrencyResult.png` (two terminals side by side).
+## Screenshots
+`screenshots/Egonu_Deborah_Onyebuchi_301915997_P3_CommitRollback.png`, `Egonu_Deborah_Onyebuchi_301915997_P3_ConcurrencyLockWait.png`, `Egonu_Deborah_Onyebuchi_301915997_P3_ConcurrencyProblem.png`, and `screenshots/Egonu_Deborah_Onyebuchi_301915997_P3_ConcurrencyResult.png` 
