@@ -1,230 +1,50 @@
-# Portfolio 4 — NoSQL and Advanced Data Models
+# Portfolio 4: NoSQL and advanced data models
 
-I used MongoDB collection order_events for order_placed and payment_captured events. These are fictional event examples based on orders, order_items, products.
+**NaijaMart (simulated Lagos e-commerce platform)** · Deborah Onyebuchi Egonu · Student ID 301915997
 
-## Document model
+## Model
+The **product catalogue** moves to MongoDB (document model) and **shopping carts and sessions** to Redis (key-value). Orders, payments and stock stay in PostgreSQL because they need ACID guarantees (polyglot persistence).
 
-| Field | Meaning |
-| --- | --- |
-| _id | Unique string event ID |
-| eventType | One of the two selected case event labels |
-| occurredAt | Native BSON Date; sample timestamps are in 2030 |
-| source | Original entity, primary key and saved JSON snapshot |
-| embedded | Linked record snapshots read with the event |
-| references | Keys for linked sources kept outside the embedded snapshots |
-| details | Event metadata whose fields vary |
-
-Related products details are stored as snapshots with the event. This makes an event readable in one document. It duplicates some information, and later SQL changes do not automatically update the snapshots. PostgreSQL continues to enforce the relational rules.
-
-## Example document
-
-```javascript
-{
-    "_id": "event_000001",
-    "schemaVersion": 1,
-    "simulation": true,
-    "eventType": "order_placed",
-    "occurredAt": ISODate("2030-01-01T10:00:00Z"),
-    "source": {
-        "entity": "order_items",
-        "key": {
-            "order_item_id": 401
-        },
-        "snapshot": {
-            "order_item_id": 401,
-            "order_id": 301,
-            "product_id": 201,
-            "quantity": 2,
-            "unit_price": 13.75
-        }
-    },
-    "embedded": {
-        "products": [
-            {
-                "key": {
-                    "product_id": 201
-                },
-                "snapshot": {
-                    "product_id": 201,
-                    "sku": "MUG-BLUE-01",
-                    "title": "Blue Ceramic Mug",
-                    "unit_price": 14.5,
-                    "active": true
-                },
-                "via": [
-                    "order_items.product_id → products"
-                ]
-            }
-        ]
-    },
-    "references": {
-        "orders": [
-            {
-                "key": {
-                    "order_id": 301
-                },
-                "via": [
-                    "order_items.order_id → orders"
-                ]
-            }
-        ]
-    },
-    "details": {
-        "channel": "web"
-    }
-}
-```
-
-## Queries and results
-
-| Query | Returned documents |
-| --- | --- |
-| Find the first sample event type (up to five documents). | 2 |
-| Find events for the first source record using nested key fields (up to five). | 2 |
-| Find events in the sample time range using a MongoDB Date filter (up to five). | 4 |
-| Count documents for each event type. | 2 |
-
-## 1. Find the first sample event type (up to five documents).
-
-```javascript
-db.getCollection("order_events").find({"eventType":"order_placed"}).sort({_id:1}).limit(5).toArray();
-```
-
-Selected fields from the returned documents:
-
+### MongoDB product document
 ```json
-[
-  {
-    "_id": "event_000001",
-    "eventType": "order_placed",
-    "occurredAt": {
-      "$date": "2030-01-01T10:00:00Z"
-    },
-    "source": {
-      "order_item_id": 401
-    }
-  },
-  {
-    "_id": "event_000003",
-    "eventType": "order_placed",
-    "occurredAt": {
-      "$date": "2030-01-01T10:02:00Z"
-    },
-    "source": {
-      "order_item_id": 402
-    }
-  }
-]
+{ "sku": "PH-001", "name": "Tecno Spark 20", "category": "Phones", "price": 145000,
+  "attributes": { "ram_gb": 8, "storage_gb": 128, "colour": "Black" },
+  "reviews": [ { "user": "Ada", "rating": 5 }, { "user": "Tunde", "rating": 4 } ] }
+```
+A phone, a shirt and a book have different attributes. In the relational model that needs many nullable columns or an attribute table with joins; in a document it is one record. Reviews are embedded because they are read together with the product.
+
+### Redis
+```text
+HSET cart:customer:1 PH-001 2 SH-001 1     # cart as a hash
+EXPIRE cart:customer:1 1800                # abandoned carts disappear after 30 minutes
+HGETALL cart:customer:1
+SET session:abc123 "customer:1" EX 3600    # login session
+ZINCRBY bestsellers 3 PH-001               # sorted-set leaderboard
+ZREVRANGE bestsellers 0 4 WITHSCORES
 ```
 
-## 2. Find events for the first source record using nested key fields (up to five).
-
-```javascript
-db.getCollection("order_events").find({"source.key.order_item_id":401}).sort({_id:1}).limit(5).toArray();
+## How to run
+```bash
+mongosh naijamart Egonu_Deborah_Onyebuchi_301915997_P4_MongoDB.js
+redis-cli      # paste the commands above
 ```
 
-Selected fields from the returned documents:
+## What the script shows
+1. Documents with different attribute sets in one collection.
+2. Filtering on a nested field (`attributes.ram_gb`).
+3. An aggregation pipeline for average rating per category.
+4. `$push` to add a review without a join or schema change.
+5. `explain("executionStats")` to confirm the compound index on category and price is used.
 
-```json
-[
-  {
-    "_id": "event_000001",
-    "eventType": "order_placed",
-    "occurredAt": {
-      "$date": "2030-01-01T10:00:00Z"
-    },
-    "source": {
-      "order_item_id": 401
-    }
-  },
-  {
-    "_id": "event_000002",
-    "eventType": "payment_captured",
-    "occurredAt": {
-      "$date": "2030-01-01T10:01:00Z"
-    },
-    "source": {
-      "order_item_id": 401
-    }
-  }
-]
-```
+Schema validation (`$jsonSchema`) keeps the flexibility but still requires sku, name, category and price, and a minimum price of 1.
 
-## 3. Find events in the sample time range using a MongoDB Date filter (up to five).
+## Suitability
+| Need | Fit |
+|---|---|
+| Varying product attributes | Documents handle this naturally |
+| Fast catalogue reads | One document read, no joins |
+| Money and stock updates | Not suited: use PostgreSQL transactions |
+| Carts that expire | Redis TTL |
 
-```javascript
-db.getCollection("order_events").find({"occurredAt":{"$gte":ISODate("2030-01-01T10:00:00Z"), "$lt":ISODate("2030-01-01T11:00:00Z")}}).sort({_id:1}).limit(5).toArray();
-```
-
-Selected fields from the returned documents:
-
-```json
-[
-  {
-    "_id": "event_000001",
-    "eventType": "order_placed",
-    "occurredAt": {
-      "$date": "2030-01-01T10:00:00Z"
-    },
-    "source": {
-      "order_item_id": 401
-    }
-  },
-  {
-    "_id": "event_000002",
-    "eventType": "payment_captured",
-    "occurredAt": {
-      "$date": "2030-01-01T10:01:00Z"
-    },
-    "source": {
-      "order_item_id": 401
-    }
-  },
-  {
-    "_id": "event_000003",
-    "eventType": "order_placed",
-    "occurredAt": {
-      "$date": "2030-01-01T10:02:00Z"
-    },
-    "source": {
-      "order_item_id": 402
-    }
-  },
-  {
-    "_id": "event_000004",
-    "eventType": "payment_captured",
-    "occurredAt": {
-      "$date": "2030-01-01T10:03:00Z"
-    },
-    "source": {
-      "order_item_id": 402
-    }
-  }
-]
-```
-
-## 4. Count documents for each event type.
-
-```javascript
-db.getCollection("order_events").aggregate([{"$group":{"_id":"$eventType", "documentCount":{"$sum":1}}}, {"$sort":{"_id":1}}]).toArray();
-```
-
-| _id | documentCount |
-| --- | --- |
-| order_placed | 2 |
-| payment_captured | 2 |
-
-## Validation and suitability
-
-MongoDB inserted 4 documents. An invalid date type was rejected with code 121 and a repeated event ID with 11000. The collection still contained 4 valid documents. The compound eventType/occurredAt index supports those access fields; this exercise does not measure its speed.
-
-The details field can vary across event types, while the common fields have a validator. Events can be added as separate documents rather than growing one large history record.
-
-## Run the script
-
-Connect mongosh to a fresh exercise database and run Egonu_Deborah_Onyebuchi_301915997_P4_MongoDB.js. It selects portfolio_nosql, creates the collection, inserts the sample documents and displays the query results. [Implementation evidence](screenshots/Egonu_Deborah_Onyebuchi_301915997_P4_DocumentsAndQueries.png).
-
-## References
-
-- [MongoDB — data modelling](https://www.mongodb.com/docs/manual/data-modeling/)
-
+## Status
+The script was written for MongoDB 7 and has not been run in the environment that generated this repository. Run it yourself and save the output to `screenshots/Egonu_Deborah_Onyebuchi_301915997_P4_DocumentsAndQueries.png`.

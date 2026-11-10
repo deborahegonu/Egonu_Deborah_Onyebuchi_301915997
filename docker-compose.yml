@@ -1,0 +1,45 @@
+# NaijaMart lab stack for Portfolios 1-4: PostgreSQL + MongoDB + Redis (+ optional pgAdmin)
+# Start:  docker compose up -d
+# Stop:   docker compose down          (add -v to also delete the data)
+# The repo folder is mounted at /work inside every container, so scripts can be run with their paths.
+services:
+  postgres:
+    image: postgres:16
+    container_name: naijamart-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: naijamart
+    ports: ["5434:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./:/work:ro
+
+  mongo:
+    image: mongo:7
+    container_name: naijamart-mongo
+    ports: ["27017:27017"]
+    volumes:
+      - mongodata:/data/db
+      - ./:/work:ro
+
+  redis:
+    image: redis:7
+    container_name: naijamart-redis
+    ports: ["6379:6379"]
+
+  # Optional web UI and ER diagram tool: docker compose --profile gui up -d  ->  http://localhost:8080
+  # Login: admin@example.com / admin ; add server host "postgres", user postgres, password secret
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: naijamart-pgadmin
+    profiles: ["gui"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports: ["8080:80"]
+    depends_on: [postgres]
+
+volumes:
+  pgdata:
+  mongodata:

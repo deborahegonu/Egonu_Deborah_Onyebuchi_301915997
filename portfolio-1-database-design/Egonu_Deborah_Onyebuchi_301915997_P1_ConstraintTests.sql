@@ -1,58 +1,34 @@
--- Run these deliberately invalid statements one at a time, outside a transaction.
--- Each should fail at the named constraint; the sample rows should remain unchanged.
-
--- 1. duplicate customer pk. Expected: pk_customers, SQLSTATE 23505.
-INSERT INTO portfolio."customers" ("customer_id", "email", "display_name", "created_at")
-VALUES (101, 'unique.customer@example.test', 'Ari Stone', '2026-10-22T10:00:00Z');
-
--- 2. duplicate customer email. Expected: uq_customers_0, SQLSTATE 23505.
-INSERT INTO portfolio."customers" ("customer_id", "email", "display_name", "created_at")
-VALUES (501, 'maya.chen@example.test', 'Ari Stone', '2026-10-22T10:05:00Z');
-
--- 3. null customer email. Expected: email, SQLSTATE 23502.
-INSERT INTO portfolio."customers" ("customer_id", "email", "display_name", "created_at")
-VALUES (502, NULL, 'Nia Reed', '2026-10-22T10:10:00Z');
-
--- 4. duplicate product pk. Expected: pk_products, SQLSTATE 23505.
-INSERT INTO portfolio."products" ("product_id", "sku", "title", "unit_price", "active")
-VALUES (201, 'MUG-RED-03', 'Red Ceramic Mug', 15, TRUE);
-
--- 5. duplicate product sku. Expected: uq_products_0, SQLSTATE 23505.
-INSERT INTO portfolio."products" ("product_id", "sku", "title", "unit_price", "active")
-VALUES (503, 'MUG-BLUE-01', 'Another Blue Mug', 16, TRUE);
-
--- 6. duplicate order pk. Expected: pk_orders, SQLSTATE 23505.
-INSERT INTO portfolio."orders" ("order_id", "customer_id", "created_at", "status")
-VALUES (301, 102, '2026-10-22T10:15:00Z', 'shipped');
-
--- 7. invalid order customer. Expected: fk_orders_0, SQLSTATE 23503.
-INSERT INTO portfolio."orders" ("order_id", "customer_id", "created_at", "status")
-VALUES (504, 999, '2026-10-22T10:20:00Z', 'paid');
-
--- 8. invalid order status. Expected: order_status_allowed, SQLSTATE 23514.
-INSERT INTO portfolio."orders" ("order_id", "customer_id", "created_at", "status")
-VALUES (505, 101, '2026-10-22T10:25:00Z', 'pending');
-
--- 9. duplicate open order customer. Expected: one_open_order_per_customer, SQLSTATE 23505.
-INSERT INTO portfolio."orders" ("order_id", "customer_id", "created_at", "status")
-VALUES (506, 101, '2026-10-22T10:30:00Z', 'open');
-
--- 10. duplicate order item pk. Expected: pk_order_items, SQLSTATE 23505.
-INSERT INTO portfolio."order_items" ("order_item_id", "order_id", "product_id", "quantity", "unit_price")
-VALUES (401, 302, 201, 1, 13.75);
-
--- 11. duplicate order product pair. Expected: uq_order_items_0, SQLSTATE 23505.
-INSERT INTO portfolio."order_items" ("order_item_id", "order_id", "product_id", "quantity", "unit_price")
-VALUES (507, 301, 201, 1, 13.75);
-
--- 12. invalid item order. Expected: fk_order_items_0, SQLSTATE 23503.
-INSERT INTO portfolio."order_items" ("order_item_id", "order_id", "product_id", "quantity", "unit_price")
-VALUES (508, 999, 202, 1, 8.25);
-
--- 13. invalid item product. Expected: fk_order_items_1, SQLSTATE 23503.
-INSERT INTO portfolio."order_items" ("order_item_id", "order_id", "product_id", "quantity", "unit_price")
-VALUES (509, 302, 999, 1, 8.25);
-
--- 14. nonpositive item quantity. Expected: positive_item_values, SQLSTATE 23514.
-INSERT INTO portfolio."order_items" ("order_item_id", "order_id", "product_id", "quantity", "unit_price")
-VALUES (510, 302, 201, 0, 13.75);
+-- Each statement is deliberately invalid and must be REJECTED. Valid data stays unchanged.
+SET search_path = naijamart;
+CREATE TEMP TABLE test_log(no int, test text, outcome text);
+DO $$
+DECLARE t record; n int := 0;
+BEGIN
+  FOR t IN SELECT * FROM (VALUES
+    ('duplicate customer email',        $q$INSERT INTO customers(full_name,email) VALUES ('X','ngozi@example.test')$q$),
+    ('null customer name',              $q$INSERT INTO customers(full_name,email) VALUES (NULL,'a@example.test')$q$),
+    ('address for missing customer',    $q$INSERT INTO addresses(customer_id,street,city,state) VALUES (999,'s','c','st')$q$),
+    ('duplicate SKU',                   $q$INSERT INTO products(category_id,sku,name,price) VALUES (1,'PH-001','Dup',100)$q$),
+    ('zero price',                      $q$INSERT INTO products(category_id,sku,name,price) VALUES (1,'ZZ-1','Free',0)$q$),
+    ('negative price',                  $q$INSERT INTO products(category_id,sku,name,price) VALUES (1,'ZZ-2','Neg',-5)$q$),
+    ('negative stock',                  $q$UPDATE inventory SET stock_qty = -1 WHERE product_id = 1$q$),
+    ('invalid order status',            $q$INSERT INTO orders(customer_id,status) VALUES (1,'lost')$q$),
+    ('order for missing customer',      $q$INSERT INTO orders(customer_id,status) VALUES (999,'paid')$q$),
+    ('second pending order, same customer', $q$INSERT INTO orders(customer_id,status) VALUES (3,'pending')$q$),
+    ('zero quantity',                   $q$INSERT INTO order_items VALUES (2,1,0,145000)$q$),
+    ('duplicate order line',            $q$INSERT INTO order_items VALUES (1,1,1,145000)$q$),
+    ('invalid payment method',          $q$INSERT INTO payments(order_id,method,status,amount) VALUES (1,'cash','failed',10)$q$),
+    ('second delivery for one order',   $q$INSERT INTO deliveries(order_id,address_id,status) VALUES (1,1,'processing')$q$)
+  ) AS x(name, stmt) LOOP
+    n := n + 1;
+    BEGIN
+      EXECUTE t.stmt;
+      INSERT INTO test_log VALUES (n, t.name, 'ACCEPTED (unexpected)');
+    EXCEPTION WHEN OTHERS THEN
+      INSERT INTO test_log VALUES (n, t.name, 'REJECTED: ' || SQLERRM);
+    END;
+  END LOOP;
+END $$;
+SELECT * FROM test_log ORDER BY no;
+SELECT (SELECT count(*) FROM customers) AS customers, (SELECT count(*) FROM products) AS products,
+       (SELECT count(*) FROM orders) AS orders, (SELECT count(*) FROM order_items) AS order_items;

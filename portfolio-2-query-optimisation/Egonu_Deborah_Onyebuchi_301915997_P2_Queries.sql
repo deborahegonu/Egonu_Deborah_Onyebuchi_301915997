@@ -1,57 +1,23 @@
--- Show related orders, customers, order_items, products records (up to 20).
-SELECT t0."order_id" AS "orders_order_id",
-       t0."created_at" AS "orders_created_at",
-       t3."customer_id" AS "customers_customer_id",
-       t3."email" AS "customers_email",
-       t1."order_item_id" AS "order_items_order_item_id",
-       t1."quantity" AS "order_items_quantity",
-       t2."product_id" AS "products_product_id",
-       t2."sku" AS "products_sku"
-FROM portfolio."orders" t0
-JOIN portfolio."order_items" t1 ON t1."order_id" = t0."order_id"
-JOIN portfolio."products" t2 ON t1."product_id" = t2."product_id"
-JOIN portfolio."customers" t3 ON t0."customer_id" = t3."customer_id"
-ORDER BY t0."order_id", t3."customer_id", t1."order_item_id", t2."product_id"
-LIMIT 20;
+SET search_path = naijamart;
+-- Q1. Orders with customer and products (join of four tables)
+SELECT o.order_id, c.full_name, p.name AS product, oi.quantity, oi.unit_price
+FROM orders o JOIN customers c USING (customer_id)
+JOIN order_items oi USING (order_id) JOIN products p USING (product_id)
+ORDER BY o.order_id, p.product_id;
 
-EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-SELECT t0."order_id" AS "orders_order_id",
-       t0."created_at" AS "orders_created_at",
-       t3."customer_id" AS "customers_customer_id",
-       t3."email" AS "customers_email",
-       t1."order_item_id" AS "order_items_order_item_id",
-       t1."quantity" AS "order_items_quantity",
-       t2."product_id" AS "products_product_id",
-       t2."sku" AS "products_sku"
-FROM portfolio."orders" t0
-JOIN portfolio."order_items" t1 ON t1."order_id" = t0."order_id"
-JOIN portfolio."products" t2 ON t1."product_id" = t2."product_id"
-JOIN portfolio."customers" t3 ON t0."customer_id" = t3."customer_id"
-ORDER BY t0."order_id", t3."customer_id", t1."order_item_id", t2."product_id"
-LIMIT 20;
+-- Q2. Revenue per category (aggregation), paid/shipped/delivered orders only
+SELECT cat.name AS category, sum(oi.quantity*oi.unit_price) AS revenue
+FROM order_items oi JOIN orders o USING (order_id)
+JOIN products p USING (product_id) JOIN categories cat USING (category_id)
+WHERE o.status IN ('paid','shipped','delivered')
+GROUP BY cat.name ORDER BY revenue DESC;
 
--- Find orders records where status matches "open" (up to 20).
-SELECT * FROM portfolio."orders"
-WHERE "status" IS NOT DISTINCT FROM 'open'
-ORDER BY "order_id"
-LIMIT 20;
+-- Q3. Customer ranking by spend within each state (window function)
+SELECT a.state, c.full_name, sum(o.total_amount) AS spend,
+       rank() OVER (PARTITION BY a.state ORDER BY sum(o.total_amount) DESC) AS rank_in_state
+FROM customers c JOIN addresses a USING (customer_id) JOIN orders o USING (customer_id)
+GROUP BY a.state, c.full_name ORDER BY a.state, rank_in_state;
 
-EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-SELECT * FROM portfolio."orders"
-WHERE "status" IS NOT DISTINCT FROM 'open'
-ORDER BY "order_id"
-LIMIT 20;
-
--- Count order_items records for each order_id (up to 20 groups).
-SELECT "order_id", count(*) AS record_count
-FROM portfolio."order_items"
-GROUP BY "order_id"
-ORDER BY record_count DESC, "order_id" NULLS LAST
-LIMIT 20;
-
-EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-SELECT "order_id", count(*) AS record_count
-FROM portfolio."order_items"
-GROUP BY "order_id"
-ORDER BY record_count DESC, "order_id" NULLS LAST
-LIMIT 20;
+-- Q4. Products never ordered (anti-join)
+SELECT p.sku, p.name FROM products p
+WHERE NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.product_id = p.product_id);

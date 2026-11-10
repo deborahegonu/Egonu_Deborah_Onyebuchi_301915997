@@ -1,20 +1,7 @@
--- Use two psql terminals connected to the same exercise database.
--- Follow the numbered order across Session A and Session B.
-
--- 2. Session B: also read 1 before A writes.
-BEGIN ISOLATION LEVEL READ COMMITTED;
-SELECT "order_id", "p3_processed_count" FROM portfolio."orders" WHERE "order_id" IS NOT DISTINCT FROM 301;
-
--- 4. Session B: write its stale value. The final count is 2, so one increment is lost.
-UPDATE portfolio."orders" SET "p3_processed_count" = 2 WHERE "order_id" IS NOT DISTINCT FROM 301 RETURNING json_build_object('processed_count',"p3_processed_count");
-COMMIT;
-SELECT "order_id", "p3_processed_count" FROM portfolio."orders" WHERE "order_id" IS NOT DISTINCT FROM 301;
-
--- 7. Session B: request the same row lock. This statement waits.
-BEGIN ISOLATION LEVEL READ COMMITTED;
-SELECT "order_id", "p3_processed_count" FROM portfolio."orders" WHERE "order_id" IS NOT DISTINCT FROM 301 FOR UPDATE;
-
--- 9. Session B: its SELECT now returns 2. Apply the second increment and commit.
-UPDATE portfolio."orders" SET "p3_processed_count" = 3 WHERE "order_id" IS NOT DISTINCT FROM 301 RETURNING json_build_object('processed_count',"p3_processed_count");
-COMMIT;
-SELECT "order_id", "p3_processed_count" FROM portfolio."orders" WHERE "order_id" IS NOT DISTINCT FROM 301;
+-- Session B: tries to buy the same last unit at the same time.
+SET search_path = naijamart;
+BEGIN;
+SELECT stock_qty FROM inventory WHERE product_id = 1 FOR UPDATE;   -- BLOCKS until A commits
+-- B now sees stock_qty = 0, so the application must refuse the order:
+ROLLBACK;
+-- Without FOR UPDATE both sessions read 1, both decrement, and the unit is sold twice (lost update).

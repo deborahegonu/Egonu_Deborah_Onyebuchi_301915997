@@ -1,21 +1,19 @@
--- This helper counter exists only in the temporary transaction exercise.
--- Original case columns and constraints are preserved. It is not part of the P1 design.
-ALTER TABLE portfolio."orders" ADD COLUMN "p3_processed_count" integer NOT NULL DEFAULT 0;
-ALTER TABLE portfolio."orders" ADD CONSTRAINT "p3_count_nonnegative" CHECK ("p3_processed_count" >= 0);
+-- Run after P1 schema + sample data. Product 3 has stock 5.
+SET search_path = naijamart;
 
-BEGIN ISOLATION LEVEL READ COMMITTED;
-UPDATE portfolio."orders" SET "p3_processed_count" = "p3_processed_count" + 1 WHERE "order_id" IS NOT DISTINCT FROM 301 RETURNING json_build_object('processed_count',"p3_processed_count");
+\echo '--- A. COMMIT: place an order for 2 units of product 3 ---'
+BEGIN;
+  INSERT INTO orders(customer_id, status, total_amount) VALUES (1,'paid',64000) RETURNING order_id \gset
+  INSERT INTO order_items VALUES (:order_id, 3, 2, 32000);
+  UPDATE inventory SET stock_qty = stock_qty - 2 WHERE product_id = 3;
 COMMIT;
-SELECT "order_id", "p3_processed_count" FROM portfolio."orders" WHERE "order_id" IS NOT DISTINCT FROM 301;
+SELECT product_id, stock_qty FROM inventory WHERE product_id = 3;
 
-BEGIN ISOLATION LEVEL READ COMMITTED;
-UPDATE portfolio."orders" SET "p3_processed_count" = "p3_processed_count" + 10 WHERE "order_id" IS NOT DISTINCT FROM 301 RETURNING json_build_object('processed_count',"p3_processed_count");
--- A negative counter deliberately fails its CHECK. Keep psql open so ROLLBACK can run.
-\set ON_ERROR_STOP off
-\set VERBOSITY verbose
-UPDATE portfolio."orders" SET "p3_processed_count" = -1 WHERE "order_id" IS NOT DISTINCT FROM 301 RETURNING json_build_object('processed_count',"p3_processed_count");
--- A failed transaction rejects another statement until it is rolled back.
-SELECT 1;
+\echo '--- B. ROLLBACK: order for 10 units fails the stock CHECK, nothing is saved ---'
+SELECT count(*) AS orders_before FROM orders;
+BEGIN;
+  INSERT INTO orders(customer_id, status, total_amount) VALUES (2,'paid',320000);
+  UPDATE inventory SET stock_qty = stock_qty - 10 WHERE product_id = 3;
 ROLLBACK;
-\set ON_ERROR_STOP on
-SELECT "order_id", "p3_processed_count" FROM portfolio."orders" WHERE "order_id" IS NOT DISTINCT FROM 301;
+SELECT count(*) AS orders_after FROM orders;
+SELECT product_id, stock_qty FROM inventory WHERE product_id = 3;

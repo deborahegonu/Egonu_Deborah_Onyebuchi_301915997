@@ -1,133 +1,90 @@
-# E-commerce Platform — SQL queries
+# Portfolio 2: Query processing and optimisation
 
-## 1. Show related orders, customers, order_items, products records (up to 20).
+**NaijaMart (simulated Lagos e-commerce platform)** · Deborah Onyebuchi Egonu · Student ID 301915997
 
-```sql
-SELECT t0."order_id" AS "orders_order_id",
-       t0."created_at" AS "orders_created_at",
-       t3."customer_id" AS "customers_customer_id",
-       t3."email" AS "customers_email",
-       t1."order_item_id" AS "order_items_order_item_id",
-       t1."quantity" AS "order_items_quantity",
-       t2."product_id" AS "products_product_id",
-       t2."sku" AS "products_sku"
-FROM portfolio."orders" t0
-JOIN portfolio."order_items" t1 ON t1."order_id" = t0."order_id"
-JOIN portfolio."products" t2 ON t1."product_id" = t2."product_id"
-JOIN portfolio."customers" t3 ON t0."customer_id" = t3."customer_id"
-ORDER BY t0."order_id", t3."customer_id", t1."order_item_id", t2."product_id"
-LIMIT 20;
-```
+## Files
+- `Egonu_Deborah_Onyebuchi_301915997_P2_Queries.sql`: four queries on the sample data (join, aggregate, window function, anti-join).
+- `Egonu_Deborah_Onyebuchi_301915997_P2_Optimisation.sql`: loads 200,000 synthetic orders (600,000 order lines), records plans before and after indexing.
 
-| orders_order_id | orders_created_at | customers_customer_id | customers_email | order_items_order_item_id | order_items_quantity | products_product_id | products_sku |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 301 | 2026-10-20T11:00:00+00:00 | 101 | maya.chen@example.test | 401 | 2 | 201 | MUG-BLUE-01 |
-| 302 | 2026-10-21T20:45:00+00:00 | 102 | leo.park@example.test | 402 | 3 | 202 | NOTE-GREEN-02 |
-
-## 2. Find orders records where status matches "open" (up to 20).
-
-```sql
-SELECT * FROM portfolio."orders"
-WHERE "status" IS NOT DISTINCT FROM 'open'
-ORDER BY "order_id"
-LIMIT 20;
-```
-
-| order_id | customer_id | created_at | status |
-| --- | --- | --- | --- |
-| 301 | 101 | 2026-10-20T11:00:00+00:00 | open |
-
-## 3. Count order_items records for each order_id (up to 20 groups).
-
-```sql
-SELECT "order_id", count(*) AS record_count
-FROM portfolio."order_items"
-GROUP BY "order_id"
-ORDER BY record_count DESC, "order_id" NULLS LAST
-LIMIT 20;
-```
-
-| order_id | record_count |
-| --- | --- |
-| 301 | 1 |
-| 302 | 1 |
-
-
-## Index comparison
-
-| Phase | Median (ms) | Three runs (ms) | Plan nodes | Buffer hits |
-| --- | --- | --- | --- | --- |
-| Before index | 1.091 | 1.091, 1.09, 1.093 | Sort → Seq Scan | 131 |
-| After index | 0.186 | 0.212, 0.183, 0.186 | Sort → Bitmap Heap Scan → Bitmap Index Scan | 25 |
-
-The median execution time changed from 1.091 ms to 0.186 ms. The measured plan used p2_filter_idx. The results matched in both phases. An index adds storage and write-maintenance costs; timings depend on the selected lookup and environment.
-
-## Execution plans
-
-### Before index, run 1
-
+## Queries on the sample data
 ```text
-Sort (actual time=1.061..1.062 rows=20 loops=1)
-  Seq Scan on orders (actual time=0.016..1.025 rows=20 loops=1)
-Planning Time: 0.414 ms
-Execution Time: 1.091 ms
+ order_id |   full_name   |          product          | quantity | unit_price 
+----------+---------------+---------------------------+----------+------------
+        1 | Ngozi Adeyemi | Tecno Spark 20            |        1 |  145000.00
+        1 | Ngozi Adeyemi | Ankara Shirt              |        1 |   15000.00
+        2 | Tunde Bakare  | Database Systems Concepts |        2 |   32000.00
+        3 | Amina Yusuf   | Ankara Shirt              |        1 |   15000.00
+(4 rows)
+
+ category |  revenue  
+----------+-----------
+ Phones   | 145000.00
+ Books    |  64000.00
+ Fashion  |  15000.00
+(3 rows)
+
+ state |   full_name   |   spend   | rank_in_state 
+-------+---------------+-----------+---------------
+ FCT   | Amina Yusuf   |  15000.00 |             1
+ Lagos | Ngozi Adeyemi | 160000.00 |             1
+ Lagos | Tunde Bakare  |  64000.00 |             2
+(3 rows)
+
+  sku   |    name    
+--------+------------
+ PH-002 | Phone Case
+(1 row)
 ```
+Q1 joins four tables. Q2 sums paid, shipped and delivered revenue per category. Q3 ranks customers by spend inside each state with `rank() OVER (PARTITION BY ...)`. Q4 uses `NOT EXISTS` to find the product that has never been ordered (PH-002 Phone Case).
 
-### Before index, run 2
+## Optimisation
+Two indexes were added after the baseline plans: `idx_orders_customer_created ON orders(customer_id, created_at)` and `idx_order_items_product ON order_items(product_id)`. PostgreSQL does not index foreign-key columns automatically, which is why both queries began with sequential scans.
 
+| Query | Plan before | Time before | Plan after | Time after |
+|---|---|---|---|---|
+| One customer's orders in 90 days | Parallel Seq Scan, 66,666 rows removed per worker | 26.985 ms | Bitmap Index Scan on the composite index | 0.069 ms |
+| Units sold per product (correlated subquery) | Seq Scan of order_items 2,000 times | 40,534 ms | Bitmap Index Scan per product | 475 ms |
+
+### Plans (before)
 ```text
-Sort (actual time=1.061..1.063 rows=20 loops=1)
-  Seq Scan on orders (actual time=0.016..1.026 rows=20 loops=1)
-Planning Time: 0.382 ms
-Execution Time: 1.09 ms
+QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Gather (actual time=26.456..26.971 rows=2 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=3441
+   ->  Parallel Seq Scan on orders (actual time=14.767..18.372 rows=1 loops=3)
+         Filter: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
+         Rows Removed by Filter: 66666
+         Buffers: shared hit=3441
+ Planning:
+   Buffers: shared hit=45
+ Planning Time: 0.131 ms
+ Execution Time: 26.985 ms
+(12 rows)
 ```
-
-### Before index, run 3
-
+### Plans (after)
 ```text
-Sort (actual time=1.063..1.064 rows=20 loops=1)
-  Seq Scan on orders (actual time=0.015..1.027 rows=20 loops=1)
-Planning Time: 0.387 ms
-Execution Time: 1.093 ms
+QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on orders (actual time=0.048..0.051 rows=2 loops=1)
+   Recheck Cond: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
+   Heap Blocks: exact=2
+   Buffers: shared hit=5 read=3
+   ->  Bitmap Index Scan on idx_orders_customer_created (actual time=0.042..0.042 rows=2 loops=1)
+         Index Cond: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
+         Buffers: shared hit=3 read=3
+ Planning:
+   Buffers: shared hit=22 read=1
+ Planning Time: 0.234 ms
+ Execution Time: 0.069 ms
+(11 rows)
 ```
 
-### After index, run 1
+## Performance analysis
+Without an index, the planner has to read every row of `orders` to find one customer's few rows, so cost grows with table size. The composite index on (customer_id, created_at) lets it jump to the customer and then filter by date, which cut execution time by roughly 390 times. For the subquery, the index removed the repeated full scans, giving about an 85 times speed-up; rewriting it as a join with GROUP BY would be faster still. The trade-off is that every index uses disk space and makes inserts and updates slightly slower, so only indexes matching real query patterns should be created.
 
-```text
-Sort (actual time=0.165..0.167 rows=20 loops=1)
-  Bitmap Heap Scan on orders (actual time=0.028..0.097 rows=20 loops=1)
-    Bitmap Index Scan using p2_filter_idx (actual time=0.016..0.016 rows=20 loops=1)
-Planning Time: 0.585 ms
-Execution Time: 0.212 ms
-```
+Timings come from one run on a shared machine and will differ on yours; the plan shapes (Seq Scan to Index Scan) are what matter.
 
-### After index, run 2
-
-```text
-Sort (actual time=0.136..0.137 rows=20 loops=1)
-  Bitmap Heap Scan on orders (actual time=0.027..0.101 rows=20 loops=1)
-    Bitmap Index Scan using p2_filter_idx (actual time=0.015..0.015 rows=20 loops=1)
-Planning Time: 0.599 ms
-Execution Time: 0.183 ms
-```
-
-### After index, run 3
-
-```text
-Sort (actual time=0.132..0.134 rows=20 loops=1)
-  Bitmap Heap Scan on orders (actual time=0.027..0.095 rows=20 loops=1)
-    Bitmap Index Scan using p2_filter_idx (actual time=0.014..0.015 rows=20 loops=1)
-Planning Time: 0.601 ms
-Execution Time: 0.186 ms
-```
-
-## Reproduce
-
-Use a fresh database with the Portfolio 1 schema and sample data. Run Egonu_Deborah_Onyebuchi_301915997_P2_Queries.sql, then Egonu_Deborah_Onyebuchi_301915997_P2_Optimisation.sql. The optimisation script creates a separate performance table and runs EXPLAIN (ANALYZE, BUFFERS).
-
-[Query screenshot](screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_QueryResults.png) · [Index comparison](screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_IndexComparison.png)
-
-## References
-
-- [PostgreSQL — EXPLAIN](https://www.postgresql.org/docs/17/using-explain.html)
-
+## Screenshots to capture
+`screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_QueryResults.png` and `screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_IndexComparison.png` from your own run.

@@ -1,53 +1,33 @@
--- A separate performance table using the case's orders.status type.
--- Only this field and a lab row ID are copied. Business constraints stay in Portfolio 1.
--- Generated values are for measuring a selective lookup, not complete case records.
-CREATE SCHEMA query_lab;
-CREATE TABLE query_lab."orders" AS
-SELECT "status", 0::bigint AS "lab_row_id" FROM portfolio."orders" WITH NO DATA;
-INSERT INTO query_lab."orders" ("status", "lab_row_id")
-SELECT ('value-' || (g % 1000)::text), g FROM generate_series(1, 20000) AS g;
-ANALYZE query_lab."orders";
+-- Benchmark on synthetic data: 20,000 customers, 2,000 products, 200,000 orders, 600,000 order lines.
+SET search_path = naijamart;
+TRUNCATE deliveries, payments, order_items, orders, inventory, products, categories, addresses, customers RESTART IDENTITY CASCADE;
+INSERT INTO categories(name) SELECT 'Category ' || g FROM generate_series(1,10) g;
+INSERT INTO products(category_id, sku, name, price)
+  SELECT 1 + g % 10, 'SKU-' || g, 'Product ' || g, round((500 + random()*49500)::numeric, 2) FROM generate_series(1,2000) g;
+INSERT INTO customers(full_name, email) SELECT 'Customer ' || g, 'c' || g || '@example.test' FROM generate_series(1,20000) g;
+INSERT INTO addresses(customer_id, street, city, state) SELECT g, g || ' Test Street', 'Ikeja', 'Lagos' FROM generate_series(1,20000) g;
+INSERT INTO orders(customer_id, status, created_at)
+  SELECT 1 + floor(random()*20000)::int,
+         (ARRAY['paid','shipped','delivered','cancelled'])[1 + floor(random()*4)::int],
+         now() - (random()*365 || ' days')::interval
+  FROM generate_series(1,200000);
+INSERT INTO order_items(order_id, product_id, quantity, unit_price)
+  SELECT o.order_id, p.product_id, 1 + floor(random()*3)::int, p.price
+  FROM orders o CROSS JOIN generate_series(1,3) k
+  JOIN products p ON p.product_id = ((o.order_id*7 + k*131) % 2000) + 1;
+UPDATE orders o SET total_amount = s.t FROM (SELECT order_id, sum(quantity*unit_price) t FROM order_items GROUP BY order_id) s WHERE s.order_id = o.order_id;
+ANALYZE;
 
--- Before: warm the lookup, then measure it three times.
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
+\echo '=== BEFORE: one customer''s recent orders ==='
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING ON) SELECT * FROM orders WHERE customer_id = 4321 AND created_at > now() - interval '90 days';
+\echo '=== BEFORE: units sold per product (correlated subquery) ==='
+EXPLAIN (ANALYZE, COSTS OFF, TIMING ON) SELECT p.product_id, (SELECT sum(quantity) FROM order_items oi WHERE oi.product_id = p.product_id) FROM products p;
 
-CREATE INDEX p2_filter_idx ON query_lab."orders" USING btree ("status");
+CREATE INDEX idx_orders_customer_created ON orders(customer_id, created_at);
+CREATE INDEX idx_order_items_product ON order_items(product_id);
+ANALYZE;
 
--- After: run the same lookup and repeat the measurements.
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT "lab_row_id", "status"
-FROM query_lab."orders"
-WHERE "status" = ('value-' || (42 % 1000)::text)
-ORDER BY "lab_row_id";
+\echo '=== AFTER: one customer''s recent orders ==='
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING ON) SELECT * FROM orders WHERE customer_id = 4321 AND created_at > now() - interval '90 days';
+\echo '=== AFTER: units sold per product (correlated subquery) ==='
+EXPLAIN (ANALYZE, COSTS OFF, TIMING ON) SELECT p.product_id, (SELECT sum(quantity) FROM order_items oi WHERE oi.product_id = p.product_id) FROM products p;

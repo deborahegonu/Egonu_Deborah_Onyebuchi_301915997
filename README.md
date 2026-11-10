@@ -1,8 +1,8 @@
-# E-commerce Platform
+# NaijaMart (simulated Lagos e-commerce platform)
 
 Deborah Onyebuchi Egonu · Student ID 301915997
 
-The portfolio uses fictional records for E-commerce Platform.
+The portfolio uses fictional records for NaijaMart, an online marketplace where customers browse products, place orders, pay and track delivery.
 
 - [Portfolio 1](portfolio-1-database-design/)
 - [Portfolio 2](portfolio-2-query-optimisation/)
@@ -11,3 +11,5 @@ The portfolio uses fictional records for E-commerce Platform.
 - [Portfolio 5](portfolio-5-distributed-cloud/)
 
 [Final summary](Egonu_Deborah_Onyebuchi_301915997_FinalSummary.md) · [PDF](Egonu_Deborah_Onyebuchi_301915997_FinalSummary.pdf)
+
+Tools: PostgreSQL 16, MongoDB 7, Redis 7, Docker Compose.

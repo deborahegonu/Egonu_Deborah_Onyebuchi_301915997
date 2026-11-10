@@ -1,74 +1,21 @@
-# E-commerce Platform — normalisation
+# Normalisation (NaijaMart)
 
-The example uses the saved sample records. The full set of fields is in the design and schema.
+## Unnormalised starting point
+`orders_flat(order_id, order_date, customer_name, customer_email, product_names, category_names, quantities, prices, payment_method, delivery_status)` where `product_names`, `quantities` and `prices` hold several values in one row.
 
-## Starting grouped records
+## First normal form (1NF)
+Every field must hold one value. Repeating product groups are split so each order line is its own row.
 
-| customer_id | orders records (list) |
-| --- | --- |
-| 101 | [301] |
-| 102 | [302] |
+| order_id | customer_email | product | category | qty | price |
+|---|---|---|---|---|---|
+| 1 | ngozi@example.test | Tecno Spark 20 | Phones | 1 | 145000 |
+| 1 | ngozi@example.test | Ankara Shirt | Fashion | 1 | 15000 |
 
+## Second normal form (2NF)
+The key is (order_id, product_id). Product name, category and price depend only on `product_id`, and customer details depend only on `order_id`. These partial dependencies are removed into `products`, `orders` and `customers`.
 
-The record IDs are grouped in a list. In 1NF, each record has its own row and each cell holds one value.
+## Third normal form (3NF)
+Category name depends on `category_id`, which depends on `product_id` (a transitive dependency). It moves to `categories`. Customer name and email depend on `customer_id`, not on the order, so they live in `customers`.
 
-## 1NF: one value per cell
-
-| orders.order_id | orders.customer_id | orders.status | customers.customer_id | customers.email |
-| --- | --- | --- | --- | --- |
-| 301 | 101 | open | 101 | maya.chen@example.test |
-| 302 | 102 | paid | 102 | leo.park@example.test |
-
-Key: order_id.
-
-## 2NF: depend on the whole key
-
-The declared candidate keys do not introduce a partial dependency here, so the 1NF rows stay unchanged at this step.
-
-## orders_example
-
-| orders.order_id | orders.customer_id | orders.status | customers.customer_id | customers.email |
-| --- | --- | --- | --- | --- |
-| 301 | 101 | open | 101 | maya.chen@example.test |
-| 302 | 102 | paid | 102 | leo.park@example.test |
-
-## 3NF: store each entity’s details once
-
-The entity keys determine their own descriptions. Related records keep foreign keys rather than repeating those descriptions.
-
-## customers
-
-| customer_id | email | display_name | created_at |
-| --- | --- | --- | --- |
-| 101 | maya.chen@example.test | Maya Chen | 2026-10-12T09:30:00+00:00 |
-| 102 | leo.park@example.test | Leo Park | 2026-10-13T14:15:00+00:00 |
-
-## products
-
-| product_id | sku | title | unit_price | active |
-| --- | --- | --- | --- | --- |
-| 201 | MUG-BLUE-01 | Blue Ceramic Mug | 14.5 | true |
-| 202 | NOTE-GREEN-02 | Green Notebook | 8.25 | true |
-
-## orders
-
-| order_id | customer_id | created_at | status |
-| --- | --- | --- | --- |
-| 301 | 101 | 2026-10-20T11:00:00+00:00 | open |
-| 302 | 102 | 2026-10-21T20:45:00+00:00 | paid |
-
-## order_items
-
-| order_item_id | order_id | product_id | quantity | unit_price |
-| --- | --- | --- | --- | --- |
-| 401 | 301 | 201 | 2 | 13.75 |
-| 402 | 302 | 202 | 3 | 8.25 |
-
-## Dependencies
-
-- customers: (customer_id) → email, display_name, created_at
-- products: (product_id) → sku, title, unit_price, active
-- orders: (order_id) → customer_id, created_at, status
-- order_items: (order_item_id) → order_id, product_id, quantity, unit_price
-
-Joining the decomposed sample tables reproduces the original 2 example rows. The design assumes the declared keys describe the relevant business dependencies.
+## Deliberate denormalisation
+`order_items.unit_price` and `orders.total_amount` repeat information that could be calculated. They are kept so a past order always shows the price the customer actually paid.

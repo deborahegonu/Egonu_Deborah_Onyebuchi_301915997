@@ -1,30 +1,38 @@
-# E-commerce Platform — Portfolio 5
+# Portfolio 5: Distributed and cloud database exercise
 
-This is the proposed distributed design for the case study.
+**NaijaMart (simulated Lagos e-commerce platform)** · Deborah Onyebuchi Egonu · Student ID 301915997
 
-## Case and proposed deployment
+![Proposed design](screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_ProposedDesign.png)
 
-E-commerce Platform keeps its relational records in PostgreSQL. MongoDB stores order_events: Proposed append-only MongoDB event documents for each order, containing the order identifier, event time and type, and embedded order-line and product snapshots. Proposed deployment: the application connects to a three-member MongoDB replica set across three availability zones in one region. PostgreSQL also needs its own managed high-availability configuration. These are separate databases; a MongoDB replica set does not replicate PostgreSQL.
+## Design
+| Component | Technique | Reason |
+|---|---|---|
+| PostgreSQL primary + replica | Streaming replication | Reads and reports go to the replica; the replica can be promoted if the primary fails |
+| MongoDB catalogue | Hash sharding on `sku` | Spreads catalogue data and traffic evenly across shards |
+| Redis | Single node with TTL (cluster in production) | Short-lived carts and sessions |
 
-## Replication and availability
+## Replication (PostgreSQL)
+```bash
+docker compose up -d
+psql -h localhost -p 5432 -U postgres naijamart -f replication-test.sql   # primary part
+psql -h localhost -p 5433 -U postgres naijamart                           # replica part
+```
+Expected evidence: `pg_stat_replication` lists the replica as `streaming`; `pg_is_in_recovery()` is true on the replica; the row inserted on the primary appears on the replica; an insert on the replica fails with "cannot execute INSERT in a read-only transaction".
 
-One primary accepts writes. Two secondaries copy the oplog asynchronously. If the primary fails, eligible members can elect a replacement when a voting majority is available. Writes can pause during election. A partition without a majority cannot elect a primary. Three containers on one computer would not protect against loss of that computer.
+## Sharding (MongoDB)
+```bash
+docker compose -f docker-compose-mongo-shards.yml up -d
+bash mongo-shard-setup.sh
+```
+The setup shards `naijamart.products` on `{ sku: "hashed" }` and prints the distribution across the two shards.
 
-## Consistency and the case
+## Availability and consistency (CAP)
+- **Payments, orders and stock** need consistency. They are written only to the primary. If the network splits, the system should refuse writes rather than risk two versions of a balance (CP).
+- **Catalogue browsing** can tolerate slightly stale data. Replicas and shards keep serving reads during failures, and new products appear a moment later (AP, eventual consistency).
+- Replica reads can lag behind the primary, so an order confirmation page must read from the primary.
 
-For order_events, a proposed client policy is majority write concern with a finite timeout, primary reads and majority read concern where committed data is required. Secondary reads can lag. Application retries need an idempotency key so the same event is not recorded twice. PostgreSQL constraints remain authoritative for Each customer email identifies at most one customer. These settings do not create an atomic transaction across PostgreSQL and MongoDB. An outbox and retrying consumer would be a separate implementation.
+## Cloud deployment
+In production this maps to a managed service: Amazon RDS for PostgreSQL with Multi-AZ and read replicas, and MongoDB Atlas with sharding, in an African region (for example AWS Cape Town) to reduce latency for Nigerian users. Automated backups, point-in-time recovery and autoscaling read replicas handle sales peaks such as Black Friday.
 
-## Sharding trade-off
-
-Sharding partitions documents; replication copies them for availability. The small sample in this portfolio does not need sharding. If order_events becomes large, evaluate a high-cardinality source-record identifier as a possible hashed shard key against actual query and write patterns. A time-only increasing key can concentrate new writes, while a hashed key can make time-range queries contact multiple shards. Validate distribution and query plans before choosing a key.
-
-## Cloud deployment and recovery
-
-A real deployment would use private networking, authentication, least-privilege roles, TLS, monitoring and tested backups. Replication also copies accidental deletions, so it does not replace backups. Availability zones do not provide regional disaster recovery. No cloud service was provisioned and no failover, replication, sharding or recovery experiment was run for this discussion.
-
-## References
-
-- [MongoDB: replication](https://www.mongodb.com/docs/manual/replication/)
-- [MongoDB: sharding](https://www.mongodb.com/docs/manual/sharding/)
-
-![Proposed architecture](screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_ProposedDesign.png)
+## Status
+The compose files and scripts have not been run in the environment that generated this repository. Run them and add your screenshots (`screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_Replication.png`, `screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_Sharding.png`), or document a cloud free-tier deployment instead.

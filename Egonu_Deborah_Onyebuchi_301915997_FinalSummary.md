@@ -1,62 +1,38 @@
 # MIT 8103 Advanced Database Systems
 
-**E-commerce Platform** · Deborah Onyebuchi Egonu · Student ID 301915997
+**NaijaMart (simulated Lagos e-commerce platform)** · Deborah Onyebuchi Egonu · Student ID 301915997
+
+GitHub repository: https://github.com/deborahegonu/Egonu_Deborah_Onyebuchi_301915997
 
 ## Case study
+NaijaMart is a simulated Lagos-based online marketplace. Customers browse products, place orders, pay and track delivery; staff manage stock and sales reports. The database stores customers, addresses, categories, products, inventory, orders, order lines, payments and deliveries. It supports placing orders, updating stock, taking payment, tracking delivery and reporting revenue.
 
-My case study is NaijaMartCo a fictional E-commerce Platform. I designed the database for customers placing and tracking orders and store staff reviewing orders and product sales, with separate tables named customers, products, orders and order_items. It supports these operations: place an order with product and price snapshots; find a customer's orders by status and date; summarize paid sales by product; benchmark the order-status filter on synthetic data: compare its query plan before and after a B-tree index using 20000 generated orders; record no expected results in this specification.
+## Portfolio 1: Database design and modelling
+I designed nine tables in third normal form. Primary keys identify rows, foreign keys keep the links, and CHECK, UNIQUE and NOT NULL rules enforce prices above zero, non-negative stock, valid statuses and one delivery per order. A partial unique index allows only one pending order per customer. The normalisation notes show a flat order table split through 1NF, 2NF and 3NF. All 14 deliberately invalid inserts were rejected without changing the valid sample rows.
 
-## Portfolio 1: Database Design and Modelling
+![NaijaMart ER diagram](images/Egonu_Deborah_Onyebuchi_301915997_ERDiagram.png)
 
-I organised the relational design into 4 tables. Primary keys identify records, foreign keys preserve the links, and checks enforce the stated business rules. A partial unique rule permits at most one order per customer where status is open. The normalisation examples show the sample data at 1NF, 2NF and 3NF. All 14 deliberately invalid inserts were rejected without changing the valid sample rows.
+Figure 1. Tables, keys and relationships.
 
-![E-commerce Platform ER diagram](images/Egonu_Deborah_Onyebuchi_301915997_ERDiagram.png)
+## Portfolio 2: Query processing and optimisation
+I wrote four queries (a four-table join, revenue per category, a window-function ranking and an anti-join). On 200,000 synthetic orders, a customer lookup used a parallel sequential scan and took 26.985 ms; after a composite index on (customer_id, created_at) it used a bitmap index scan and took 0.069 ms. A correlated subquery over 600,000 order lines fell from 40,534 ms to 475 ms after indexing order_items.product_id. The cost of indexes is extra storage and slower writes, so I added only indexes that matched real queries.
 
-Figure 1. Tables, keys and relationships. PK: primary key; FK: foreign key; UK: unique value.
+## Portfolio 3: Transactions and concurrency
+A committed order inserted the order and line and reduced stock from 5 to 3 together. A second order for 10 units failed the stock CHECK and was rolled back, leaving the order count and stock unchanged. Two sessions competing for the last unit both accepted an order under the default READ COMMITTED level (a lost update, two orders for one unit). Using `SELECT ... FOR UPDATE`, the second session waited, saw stock 0 and rejected its order.
 
-<!-- PAGE BREAK -->
+## Portfolio 4: NoSQL and advanced data models
+I modelled the product catalogue as MongoDB documents because products have different attributes, and shopping carts as Redis hashes with a 30-minute expiry. The MongoDB script adds schema validation, compound and nested-field indexes, an aggregation for average rating per category, and an explain plan. Orders, payments and stock remain in PostgreSQL for ACID guarantees.
 
-## Portfolio 2: Query Processing and Optimisation
+## Portfolio 5: Distributed and cloud database exercise
+The design uses a PostgreSQL primary with a streaming replica, a hash-sharded MongoDB catalogue and Redis. Payments and stock favour consistency; catalogue browsing accepts eventual consistency for availability. Docker Compose files and scripts demonstrate replication and sharding, and the cloud mapping is RDS Multi-AZ with read replicas and MongoDB Atlas.
 
-I ran three SQL queries against the sample records. The join returned 2 rows and included maya.chen@example.test with MUG-BLUE-01. For the index comparison, I used 20,000 separate performance rows. The median lookup time changed from 1.091 ms to 0.186 ms. Both phases returned the same records. The measured plan used the new index. These timings apply to this lookup and environment.
+![Proposed distributed design](portfolio-5-distributed-cloud/screenshots/Egonu_Deborah_Onyebuchi_301915997_P5_ProposedDesign.png)
 
-## Portfolio 3: Transactions and Concurrency
-
-I used a temporary counter on orders to test COMMIT, ROLLBACK and READ COMMITTED isolation. The uncommitted update remained hidden from the other session, and ROLLBACK restored the earlier committed value. Without locking, two increments left the counter at 2. With SELECT FOR UPDATE, Session B waited for Session A and the final value was 3. The helper is confined to this exercise; the case's original business fields stay unchanged.
-
-## Portfolio 4: NoSQL and Advanced Data Models
-
-I used order_events for the case's event documents. MongoDB inserted 4 sample events and returned the expected results for 4 queries. Validation rejected an invalid date type and a duplicate event ID. Embedded snapshots keep related details with an event, while the details field can differ by event type. These are fictional events; PostgreSQL continues to enforce its relational rules.
-
-## Repository and evidence
-
-https://github.com/deborahegonu/Egonu_Deborah_Onyebuchi_301915997
-
-The portfolio folders contain the SQL and JavaScript, explanations, query plans, result tables and screenshots.
-
-
-<!-- PAGE BREAK -->
-
-## Portfolio 5: Distributed and Cloud Database Exercise
-
-I proposed three MongoDB replica members across separate failure zones. The discussion covers primary elections, majority acknowledgement, secondary lag and sharding trade-offs for order_events. Replication supports availability, while backups address recovery. PostgreSQL needs its own availability plan. This is the permitted discussion option; no live replica set or failover test was deployed.
-
-## Individual reflection
-
-I kept customers, products, orders, order_items in separate tables so their details could be maintained without repeating them in every related record. A partial unique rule permits at most one order per customer where status is open. The constraint tests check this alongside the required values and record links. One issue illustrated by the two-session exercise is that both sessions can read the same value before either update is committed. Locking the row before reading preserves both increments. The index comparison also shows why I need to check the execution plan as well as the final answer: the same result can require different amounts of database work.
-
-## AI-use declaration
-
-I used GitHub Copilot and the portfolio generator to help prepare the database model, scripts and explanations. The generator ran the PostgreSQL and MongoDB exercises, checked their outputs and captured the result images.  I remain responsible for checking and explaining the submitted work.
+## Individual technical reflection
+{{WRITE_YOUR_OWN_REFLECTION: 150-250 words on design choices, the hardest challenge you solved, what the execution plans taught you, and what you would change.}}
 
 ## References
+PostgreSQL Global Development Group (2024) *PostgreSQL 16 Documentation*. MongoDB Inc. (2024) *MongoDB Manual*. Redis Ltd. (2024) *Redis Documentation*. Docker Inc. (2024) *Docker Compose documentation*.
 
-- [PostgreSQL: constraints](https://www.postgresql.org/docs/17/ddl-constraints.html)
-- [PostgreSQL: EXPLAIN](https://www.postgresql.org/docs/17/using-explain.html)
-- [PostgreSQL: isolation](https://www.postgresql.org/docs/17/transaction-iso.html)
-- [PostgreSQL: row locks](https://www.postgresql.org/docs/17/explicit-locking.html)
-- [MongoDB: data modelling](https://www.mongodb.com/docs/manual/data-modeling/)
-- [MongoDB: replication](https://www.mongodb.com/docs/manual/replication/)
-- [MongoDB: sharding](https://www.mongodb.com/docs/manual/sharding/)
-- [Mermaid: ER diagrams](https://mermaid.js.org/syntax/entityRelationshipDiagram.html)
-
+## AI use declaration
+**Tool:** Claude (Anthropic). **Used for:** drafting the case study structure, SQL and MongoDB scripts, and report text. **Verification:** {{EDIT_TO_MATCH_WHAT_YOU_ACTUALLY_DID: for example, ran every script myself, checked outputs and plans, corrected errors, and wrote my own reflection}}.

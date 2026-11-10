@@ -1,45 +1,66 @@
--- E-commerce Platform: tables, keys and business constraints.
--- Run once in a fresh PostgreSQL database.
-BEGIN;
-SET LOCAL standard_conforming_strings = on;
-CREATE SCHEMA portfolio;
-CREATE TABLE portfolio."customers" (
-  "customer_id" bigint NOT NULL,
-  "email" text NOT NULL,
-  "display_name" text NOT NULL,
-  "created_at" timestamptz NOT NULL,
-  CONSTRAINT "pk_customers" PRIMARY KEY ("customer_id"),
-  CONSTRAINT "uq_customers_0" UNIQUE ("email")
+-- NaijaMart: PostgreSQL schema (3NF)
+DROP SCHEMA IF EXISTS naijamart CASCADE;
+CREATE SCHEMA naijamart;
+SET search_path = naijamart;
+
+CREATE TABLE customers (
+  customer_id BIGSERIAL PRIMARY KEY,
+  full_name   TEXT NOT NULL,
+  email       TEXT NOT NULL UNIQUE,
+  phone       TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE TABLE portfolio."products" (
-  "product_id" bigint NOT NULL,
-  "sku" text NOT NULL,
-  "title" text NOT NULL,
-  "unit_price" numeric(18,2) NOT NULL,
-  "active" boolean NOT NULL,
-  CONSTRAINT "pk_products" PRIMARY KEY ("product_id"),
-  CONSTRAINT "uq_products_0" UNIQUE ("sku")
+CREATE TABLE addresses (
+  address_id  BIGSERIAL PRIMARY KEY,
+  customer_id BIGINT NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+  street      TEXT NOT NULL,
+  city        TEXT NOT NULL,
+  state       TEXT NOT NULL
 );
-CREATE TABLE portfolio."orders" (
-  "order_id" bigint NOT NULL,
-  "customer_id" bigint NOT NULL,
-  "created_at" timestamptz NOT NULL,
-  "status" text NOT NULL,
-  CONSTRAINT "pk_orders" PRIMARY KEY ("order_id")
+CREATE TABLE categories (
+  category_id BIGSERIAL PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE
 );
-CREATE TABLE portfolio."order_items" (
-  "order_item_id" bigint NOT NULL,
-  "order_id" bigint NOT NULL,
-  "product_id" bigint NOT NULL,
-  "quantity" bigint NOT NULL,
-  "unit_price" numeric(18,2) NOT NULL,
-  CONSTRAINT "pk_order_items" PRIMARY KEY ("order_item_id"),
-  CONSTRAINT "uq_order_items_0" UNIQUE ("order_id", "product_id")
+CREATE TABLE products (
+  product_id  BIGSERIAL PRIMARY KEY,
+  category_id BIGINT NOT NULL REFERENCES categories(category_id),
+  sku         TEXT NOT NULL UNIQUE,
+  name        TEXT NOT NULL,
+  price       NUMERIC(12,2) NOT NULL CHECK (price > 0)
 );
-ALTER TABLE portfolio."orders" ADD CONSTRAINT "fk_orders_0" FOREIGN KEY ("customer_id") REFERENCES portfolio."customers" ("customer_id");
-ALTER TABLE portfolio."order_items" ADD CONSTRAINT "fk_order_items_0" FOREIGN KEY ("order_id") REFERENCES portfolio."orders" ("order_id");
-ALTER TABLE portfolio."order_items" ADD CONSTRAINT "fk_order_items_1" FOREIGN KEY ("product_id") REFERENCES portfolio."products" ("product_id");
-ALTER TABLE portfolio."orders" ADD CONSTRAINT "order_status_allowed" CHECK (("status" = 'open') OR ("status" = 'paid') OR ("status" = 'shipped') OR ("status" = 'cancelled'));
-CREATE UNIQUE INDEX "one_open_order_per_customer" ON portfolio."orders" ("customer_id") WHERE ("status" = 'open');
-ALTER TABLE portfolio."order_items" ADD CONSTRAINT "positive_item_values" CHECK (("quantity" > 0) AND ("unit_price" >= 0));
-COMMIT;
+CREATE TABLE inventory (
+  product_id BIGINT PRIMARY KEY REFERENCES products(product_id) ON DELETE CASCADE,
+  stock_qty  INTEGER NOT NULL CHECK (stock_qty >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE orders (
+  order_id     BIGSERIAL PRIMARY KEY,
+  customer_id  BIGINT NOT NULL REFERENCES customers(customer_id),
+  status       TEXT NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending','paid','shipped','delivered','cancelled')),
+  total_amount NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (total_amount >= 0),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE order_items (
+  order_id   BIGINT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+  product_id BIGINT NOT NULL REFERENCES products(product_id),
+  quantity   INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price > 0),
+  PRIMARY KEY (order_id, product_id)
+);
+CREATE TABLE payments (
+  payment_id BIGSERIAL PRIMARY KEY,
+  order_id   BIGINT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+  method     TEXT NOT NULL CHECK (method IN ('card','transfer','ussd','wallet')),
+  status     TEXT NOT NULL CHECK (status IN ('initiated','successful','failed','refunded')),
+  amount     NUMERIC(14,2) NOT NULL CHECK (amount > 0)
+);
+CREATE TABLE deliveries (
+  delivery_id  BIGSERIAL PRIMARY KEY,
+  order_id     BIGINT NOT NULL UNIQUE REFERENCES orders(order_id) ON DELETE CASCADE,
+  address_id   BIGINT NOT NULL REFERENCES addresses(address_id),
+  status       TEXT NOT NULL CHECK (status IN ('processing','in_transit','delivered','failed')),
+  delivered_at TIMESTAMPTZ
+);
+-- Business rule: a customer may have at most one open (pending) order at a time
+CREATE UNIQUE INDEX one_pending_order_per_customer ON orders(customer_id) WHERE status = 'pending';
