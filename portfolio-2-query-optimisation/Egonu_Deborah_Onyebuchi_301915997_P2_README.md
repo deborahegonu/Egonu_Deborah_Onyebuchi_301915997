@@ -5,6 +5,7 @@
 ## Files
 - `Egonu_Deborah_Onyebuchi_301915997_P2_Queries.sql`: four queries on the sample data (join, aggregate, window function, anti-join).
 - `Egonu_Deborah_Onyebuchi_301915997_P2_Optimisation.sql`: loads 200,000 synthetic orders (600,000 order lines), records plans before and after indexing.
+- `plans.txt`: raw EXPLAIN ANALYZE output from my run
 
 ## Queries on the sample data
 ```text
@@ -42,49 +43,49 @@ Two indexes were added after the baseline plans: `idx_orders_customer_created ON
 
 | Query | Plan before | Time before | Plan after | Time after |
 |---|---|---|---|---|
-| One customer's orders in 90 days | Parallel Seq Scan, 66,666 rows removed per worker | 26.985 ms | Bitmap Index Scan on the composite index | 0.069 ms |
-| Units sold per product (correlated subquery) | Seq Scan of order_items 2,000 times | 40,534 ms | Bitmap Index Scan per product | 475 ms |
+| One customer's orders in 90 days | Parallel Seq Scan, 66,666 rows removed per worker | 19.570 ms | Bitmap Index Scan on the composite index | 0.067 ms |
+| Units sold per product (correlated subquery) | Seq Scan of order_items 2,000 times | 30,002 ms | Bitmap Index Scan per product | 328 ms |
 
 ### Plans (before)
 ```text
 QUERY PLAN                                        
 -----------------------------------------------------------------------------------------
- Gather (actual time=26.456..26.971 rows=2 loops=1)
+ Gather (actual time=11.305..19.550 rows=1 loops=1)
    Workers Planned: 2
    Workers Launched: 2
    Buffers: shared hit=3441
-   ->  Parallel Seq Scan on orders (actual time=14.767..18.372 rows=1 loops=3)
+   ->  Parallel Seq Scan on orders (actual time=4.287..5.841 rows=0 loops=3)
          Filter: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
          Rows Removed by Filter: 66666
          Buffers: shared hit=3441
  Planning:
-   Buffers: shared hit=45
- Planning Time: 0.131 ms
- Execution Time: 26.985 ms
+   Buffers: shared hit=42
+ Planning Time: 0.248 ms
+ Execution Time: 19.570 ms
 (12 rows)
 ```
 ### Plans (after)
 ```text
 QUERY PLAN                                            
 --------------------------------------------------------------------------------------------------
- Bitmap Heap Scan on orders (actual time=0.048..0.051 rows=2 loops=1)
+ Bitmap Heap Scan on orders (actual time=0.053..0.055 rows=1 loops=1)
    Recheck Cond: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
-   Heap Blocks: exact=2
-   Buffers: shared hit=5 read=3
-   ->  Bitmap Index Scan on idx_orders_customer_created (actual time=0.042..0.042 rows=2 loops=1)
+   Heap Blocks: exact=1
+   Buffers: shared hit=4 read=3
+   ->  Bitmap Index Scan on idx_orders_customer_created (actual time=0.041..0.041 rows=1 loops=1)
          Index Cond: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
          Buffers: shared hit=3 read=3
  Planning:
    Buffers: shared hit=22 read=1
- Planning Time: 0.234 ms
- Execution Time: 0.069 ms
+ Planning Time: 0.262 ms
+ Execution Time: 0.067 ms
 (11 rows)
 ```
 
 ## Performance analysis
-Without an index, the planner has to read every row of `orders` to find one customer's few rows, so cost grows with table size. The composite index on (customer_id, created_at) lets it jump to the customer and then filter by date, which cut execution time by roughly 390 times. For the subquery, the index removed the repeated full scans, giving about an 85 times speed-up; rewriting it as a join with GROUP BY would be faster still. The trade-off is that every index uses disk space and makes inserts and updates slightly slower, so only indexes matching real query patterns should be created.
+Without an index, the planner has to read every row of `orders` to find one customer's few rows, so cost grows with table size. The composite index on (customer_id, created_at) lets it jump to the customer and then filter by date, which cut execution time by roughly 290 times (19.570/0.067 ≈ 292). For the subquery, the index removed the repeated full scans, giving about a 90 times (30,002/328 ≈ 91) speed-up; rewriting it as a join with GROUP BY would be faster still. The trade-off is that every index uses disk space and makes inserts and updates slightly slower, so only indexes matching real query patterns should be created.
 
-Timings come from one run on a shared machine and will differ on yours; the plan shapes (Seq Scan to Index Scan) are what matter.
+Timings come from a single run on my own machine (PostgreSQL 16 in Docker) and will differ on other machines; the plan shapes (Seq Scan to Index Scan) are what matter.
 
-## Screenshots to capture
-`screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_QueryResults.png` and `screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_IndexComparison.png` from your own run.
+## Screenshots
+`screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_QueryResults.png` and `screenshots/Egonu_Deborah_Onyebuchi_301915997_P2_IndexComparison.png`. Full output is in `plans.txt`

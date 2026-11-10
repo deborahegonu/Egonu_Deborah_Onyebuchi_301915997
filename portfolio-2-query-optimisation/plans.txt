@@ -1,0 +1,74 @@
+SET
+TRUNCATE TABLE
+INSERT 0 10
+INSERT 0 2000
+INSERT 0 20000
+INSERT 0 20000
+INSERT 0 200000
+INSERT 0 600000
+UPDATE 200000
+ANALYZE
+=== BEFORE: one customer's recent orders ===
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Gather (actual time=11.305..19.550 rows=1 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=3441
+   ->  Parallel Seq Scan on orders (actual time=4.287..5.841 rows=0 loops=3)
+         Filter: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
+         Rows Removed by Filter: 66666
+         Buffers: shared hit=3441
+ Planning:
+   Buffers: shared hit=42
+ Planning Time: 0.248 ms
+ Execution Time: 19.570 ms
+(12 rows)
+
+=== BEFORE: units sold per product (correlated subquery) ===
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
+ Seq Scan on products p (actual time=171.590..29564.243 rows=2000 loops=1)
+   SubPlan 1
+     ->  Aggregate (actual time=14.704..14.704 rows=1 loops=2000)
+           ->  Seq Scan on order_items oi (actual time=0.026..14.678 rows=300 loops=2000)
+                 Filter: (product_id = p.product_id)
+                 Rows Removed by Filter: 599700
+ Planning Time: 0.360 ms
+ Execution Time: 30001.649 ms
+(8 rows)
+
+CREATE INDEX
+CREATE INDEX
+ANALYZE
+=== AFTER: one customer's recent orders ===
+                                            QUERY PLAN                                            
+--------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on orders (actual time=0.053..0.055 rows=1 loops=1)
+   Recheck Cond: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
+   Heap Blocks: exact=1
+   Buffers: shared hit=4 read=3
+   ->  Bitmap Index Scan on idx_orders_customer_created (actual time=0.041..0.041 rows=1 loops=1)
+         Index Cond: ((customer_id = 4321) AND (created_at > (now() - '90 days'::interval)))
+         Buffers: shared hit=3 read=3
+ Planning:
+   Buffers: shared hit=22 read=1
+ Planning Time: 0.262 ms
+ Execution Time: 0.067 ms
+(11 rows)
+
+=== AFTER: units sold per product (correlated subquery) ===
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Seq Scan on products p (actual time=29.088..326.917 rows=2000 loops=1)
+   SubPlan 1
+     ->  Aggregate (actual time=0.149..0.149 rows=1 loops=2000)
+           ->  Bitmap Heap Scan on order_items oi (actual time=0.033..0.136 rows=300 loops=2000)
+                 Recheck Cond: (product_id = p.product_id)
+                 Heap Blocks: exact=600000
+                 ->  Bitmap Index Scan on idx_order_items_product (actual time=0.015..0.015 rows=300 loops=2000)
+                       Index Cond: (product_id = p.product_id)
+ Planning Time: 0.096 ms
+ Execution Time: 328.011 ms
+(10 rows)
+
