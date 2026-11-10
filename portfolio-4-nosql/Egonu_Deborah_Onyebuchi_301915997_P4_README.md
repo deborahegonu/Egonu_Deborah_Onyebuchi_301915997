@@ -47,4 +47,7 @@ Schema validation (`$jsonSchema`) keeps the flexibility but still requires sku, 
 | Carts that expire | Redis TTL |
 
 ## Status
-The script was written for MongoDB 7 and has not been run in the environment that generated this repository. Run it yourself and save the output to `screenshots/Egonu_Deborah_Onyebuchi_301915997_P4_DocumentsAndQueries.png`.
+Run with MongoDB 7 and Redis 7 in Docker; output in the screenshots.”
+
+## Screenshots
+ `screenshots/Egonu_Deborah_Onyebuchi_301915997_P4_DocumentsAndQueries_1.png`, `screenshots/Egonu_Deborah_Onyebuchi_301915997_P4_DocumentsAndQueries_2.png`, and `screenshots/Egonu_Deborah_Onyebuchi_301915997_P4_RedisCommands.png`
